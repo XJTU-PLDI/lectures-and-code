@@ -20,7 +20,7 @@ def interpret(module: ModuleNode):
     def call_function(function: FunctionNode, args: list[float]) -> float:
         nonlocal function_map, stored_states, local_vars
         stored_states.append(local_vars)
-        local_vars = {}
+        local_vars = { 'return-value': 0.0 }
 
         assert len(function.parameters) == len(args)
         for i in range(len(args)):
@@ -31,10 +31,18 @@ def interpret(module: ModuleNode):
         except ReturnException:
             pass
 
-        return_value = local_vars.get('return-value', 0.0)
+        return_value = local_vars['return-value']
         local_vars = stored_states.pop()
         return return_value
-    
+
+    builtin_functions = ["print"]
+    def call_builtin_function(name: str, args: list[float]) -> float:
+        match name:
+            case "print":
+                print(*args)
+                return 0.0
+            case unexpected_name: raise NotImplementedError(f"Unknown built-in function: {unexpected_name}")
+
     def exec_stat(stat: StatementNode):
         match stat:
             case BlockStat(): exec_block_stat(stat)
@@ -120,12 +128,15 @@ def interpret(module: ModuleNode):
             case unexpected_op: raise NotImplementedError(f"Unknown operator: {unexpected_op}")
 
     def eval_call_expr(expr: CallExpr) -> float:
-        args = [eval_expr(arg) for arg in expr.arguments]
-        if expr.callee == 'print':
-            print(*args)
-            return 0.0
-        func = function_map[expr.callee]
-        return call_function(func, args)
+        args: list[float] = []
+        for arg in expr.arguments:
+            args.append(eval_expr(arg))
+        
+        if expr.callee in builtin_functions:
+            return call_builtin_function(expr.callee, args)
+        else:
+            func = function_map[expr.callee]
+            return call_function(func, args)
 
     function_map: dict[str, FunctionNode] = {}
     global_vars: dict[str, float] = {}

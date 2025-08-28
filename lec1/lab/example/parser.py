@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from tokenizer import Token
 
+# dataclass 可以理解为只需要声明了字段就会生成构造器，比较方便
+
 class SyntaxTreeNode:
     pass
 
@@ -79,36 +81,44 @@ def parse(tokens: list[Token]) -> ModuleNode:
     pos = 0
     maxlen = len(tokens)
 
-    def available(offset: int = 0):
+    # 查询 (当前位置 + 偏移) 的词元是否可用，默认偏移为0
+    def available(offset: int = 0) -> bool:
         nonlocal maxlen, pos
         return pos + offset < maxlen
 
-    def advance(count: int = 1):
+    # 消费一个词元
+    def advance(count: int = 1) -> None:
         nonlocal pos
         pos += count
 
-    def peek_type(offset: int = 0):
+    # 查询下一个词元的类型
+    def peek_type(offset: int = 0) -> str:
         return peek(offset).type
 
-    def peek(offset: int = 0):
+    # 查询下一个词元，但不消费
+    def peek(offset: int = 0) -> Token:
         nonlocal tokens, pos
         return tokens[pos + offset]
-
-    def match(expected_type: str):
+    
+    # 查询下一个词元并消费掉
+    def next() -> Token:
         token = peek()
-        got_type = token.type
-        if got_type == expected_type:
-            advance()
-            return token
-        else:
-            raise Exception(f"got type {got_type}, but expected {expected_type}")
+        advance()
+        return token
 
-    def parse_module():
+    # 查询下一个词元并消费掉，强制要求其类型匹配某类型，否则报错
+    def match(expected_type: str) -> Token:
+        token = next()
+        got_type = token.type
+        if got_type != expected_type:
+            raise Exception(f"got type {got_type}, but expected {expected_type}")
+        return token
+
+    def parse_module() -> ModuleNode:
         functions: list[FunctionNode] = []
         global_vars: list[BinaryExpr] = []
         while available():
-            token = peek()
-            match token.type:
+            match peek_type():
                 case 'function':
                     functions.append(parse_function())
                 case 'identifier':
@@ -120,7 +130,7 @@ def parse(tokens: list[Token]) -> ModuleNode:
                     raise Exception(f"Unexpected token: {unexpected_type}")
         return ModuleNode(functions, global_vars)
     
-    def parse_function():
+    def parse_function() -> FunctionNode:
         match('function')
         name = match('identifier').text
         match('(')
@@ -144,7 +154,7 @@ def parse(tokens: list[Token]) -> ModuleNode:
             case 'return': return parse_return_stat()
             case _: return parse_expr_eval_stat()
 
-    def parse_statements_block():
+    def parse_statements_block() -> BlockStat:
         match('{')
         statements: list[StatementNode] = []
         while peek_type() != '}':
@@ -152,7 +162,7 @@ def parse(tokens: list[Token]) -> ModuleNode:
         match('}')
         return BlockStat(statements)
 
-    def parse_if_statement():
+    def parse_if_statement() -> IfStat:
         match('if')
         match('(')
         condition = parse_expression()
@@ -165,7 +175,7 @@ def parse(tokens: list[Token]) -> ModuleNode:
         else:
             return IfStat(condition, branch_true)
     
-    def parse_while_stat():
+    def parse_while_stat() -> WhileStat:
         match('while')
         match('(')
         condition = parse_expression()
@@ -173,17 +183,17 @@ def parse(tokens: list[Token]) -> ModuleNode:
         body = parse_statement()
         return WhileStat(condition, body)
 
-    def parse_continue_stat():
+    def parse_continue_stat() -> ContinueStat:
         match('continue')
         match(';')
         return ContinueStat()
 
-    def parse_break_stat():
+    def parse_break_stat() -> BreakStat:
         match('break')
         match(';')
         return BreakStat()
 
-    def parse_return_stat():
+    def parse_return_stat() -> ReturnStat:
         match('return')
         if peek_type() == ';':
             match(';')
@@ -193,7 +203,7 @@ def parse(tokens: list[Token]) -> ModuleNode:
             match(';')
             return ReturnStat(value)
     
-    def parse_expr_eval_stat():
+    def parse_expr_eval_stat() -> ExprEvalStat:
         expr = parse_expression()
         match(';')
         return ExprEvalStat(expr)
@@ -205,7 +215,7 @@ def parse(tokens: list[Token]) -> ModuleNode:
         if available(1) and peek_type() == 'identifier' and peek_type(1) == '=':
             var = parse_variable()
             match('=')
-            value = parse_expression()
+            value = parse_assign_expr()
             return BinaryExpr('=', var, value)
         else:
             return parse_compare_expr()
@@ -213,42 +223,39 @@ def parse(tokens: list[Token]) -> ModuleNode:
     def parse_compare_expr() -> ExpressionNode:
         left = parse_add_expr()
         if available() and peek_type() in ('==', '!=', '<=', '<', '>=', '>'):
-            operator = match(peek_type()).type
+            operator = next().type
             right = parse_compare_expr()
             return BinaryExpr(operator, left, right)
-        else:
-            return left
+        return left
     
     def parse_add_expr() -> ExpressionNode:
         left = parse_mul_expr()
         if available() and peek_type() in ('+', '-'):
-            operator = match(peek_type()).type
+            operator = next().type
             right = parse_add_expr()
             return BinaryExpr(operator, left, right)
-        else:
-            return left
+        return left
         
     def parse_mul_expr() -> ExpressionNode:
         left = parse_unary_expr()
         if available() and peek_type() in ('*', '/'):
-            operator = match(peek_type()).type
+            operator = next().type
             right = parse_mul_expr()
             return BinaryExpr(operator, left, right)
-        else:
-            return left
+        return left
         
     def parse_unary_expr() -> ExpressionNode:
         match peek_type():
             case '+':
-                match('+')
+                advance()
                 operand = parse_unary_expr()
                 return UnaryExpr('+', operand)
             case '-':
-                match('-')
+                advance()
                 operand = parse_unary_expr()
                 return UnaryExpr('-', operand)
             case '!':
-                match('!')
+                advance()
                 operand = parse_unary_expr()
                 return UnaryExpr('!', operand)
             case _:
@@ -264,37 +271,32 @@ def parse(tokens: list[Token]) -> ModuleNode:
                 else :
                     return parse_variable()
             case '(':
-                match('(')
+                advance()
                 expr = parse_expression()
                 match(')')
                 return expr
             case unexpected_type:
                 raise SyntaxError(f"Unexpected token: {unexpected_type}")
             
-    def parse_call_expr() -> ExpressionNode:
+    def parse_call_expr() -> CallExpr:
         callee = match('identifier').text
         match('(')
         args: list[ExpressionNode] = []
         if peek_type() != ')':
             args.append(parse_expression())
             while peek_type() == ',':
-                match(',')
+                advance()
                 args.append(parse_expression())
         match(')')
         return CallExpr(callee, args)
 
-    def parse_variable():
+    def parse_variable() -> Variable:
         name = match('identifier').text
         return Variable(name)
 
-    def parse_number_constant():
+    def parse_number_constant() -> NumberConstant:
         value = match('number').text
         return NumberConstant(float(value))
 
     # 调用 起始文法规则 (module) 开始匹配
-    try:
-        module = parse_module()
-    except Exception as e:
-        print(f"at: {pos}")
-        raise e
-    return module
+    return parse_module()
